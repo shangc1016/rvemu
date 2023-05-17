@@ -15,6 +15,6 @@ int main(int argc, char *argv[]) {
   machine_load_program(&machine, argv[1]);
 
   printf("entry: 0x%lx\n", machine.mmu.entry);
-
+  
   return 0;
 }

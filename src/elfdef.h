@@ -28,9 +28,20 @@ typedef struct {
   u64 e_shoff;
   u32 e_flags;
   u16 e_ehsize;
-  u16 e_phentsize;
+  u16 e_phentsize;  // program header entry size
   u16 e_phnum;
-  u16 e_shentsize;
+  u16 e_shentsize;  // segment header entry sizeI
   u16 e_shnum;
   u16 e_shstrndx;
 } elf64_ehdr_t;
+
+typedef struct {
+  u32 p_type;
+  u32 p_flags;
+  u64 p_offset;
+  u64 p_vaddr;
+  u64 p_paddr;
+  u64 p_filesz;
+  u64 p_memsz;
+  u64 p_align;
+} elf64_phdr_t;
