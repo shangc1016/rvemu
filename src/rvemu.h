@@ -22,6 +22,7 @@
            __VA_ARGS__),                                           \
    exit(1))
 #define fatal(msg) fatalf("%s", msg)
+#define unreachable() (fatal("unreachable"), __buildin_unreachable())
 
 #define ROUNDDOWN(x, k) ((x) & -(k))
 #define ROUNDUP(x, k) (((x) + (k)-1) & -(k))
@@ -33,11 +34,12 @@
 #define TO_HOST(addr) (addr + GUEST_MEMORY_OFFSET)
 #define TO_GUEST(addr) (addr - GUEST_MEMORY_OFFSET)
 
-
-
 // mmu.c
 typedef struct {
   u64 entry;
+  u64 host_alloc;
+  u64 alloc;  // 指向的是进程动态分配的内存的一个地址
+  u64 base;   // 指向的是ELF内容在内存中的占用
 } mmu_t;
 
 void mmu_load_elf(mmu_t *mmu, int fd);
