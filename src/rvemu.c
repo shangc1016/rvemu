@@ -1,6 +1,7 @@
 #include "rvemu.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
@@ -14,10 +15,11 @@ int main(int argc, char *argv[]) {
   machine_t machine = {0};
   machine_load_program(&machine, argv[1]);
 
-  printf("entry: 0x%012lx\n", machine.mmu.entry);
-  printf("TO_HOST(entry): 0x%012llx\n", TO_HOST(machine.mmu.entry));
 
-  printf("host alloc: %lx\n", machine.mmu.host_alloc);
-  
+  while(true){
+    enum exit_reason_t exit_reason = machine_step(&machine);
+    assert(exit_reason == ecall);
+  }
+
   return 0;
 }
