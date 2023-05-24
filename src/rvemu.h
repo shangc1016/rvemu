@@ -172,8 +172,6 @@ enum insn_type_t {
 /* 132 */   insn_fmv_d_x,
 /* 133 */   num_insns,
 
-
-
 };
 
 // decode.c

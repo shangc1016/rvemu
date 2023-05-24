@@ -134,11 +134,7 @@ static inline insn_t insn_catype_read(u16 data){
 }
 
 // cr: 压缩的R类型指令，Register
-<<<<<<< HEAD
 static inline insn_t insn_crtype_read(u16 data){
-=======
-static inline insn_t crtype_read(u16 data){
->>>>>>> 917cdf48488da2b21b183d6c83f13e62071db6be
   return (insn_t) {
     .rs1 = RC1(data),
     .rs2 = RC2(data),
@@ -399,7 +395,6 @@ void insn_decode(insn_t *insn, u32 data) {
         *insn = insn_cltype_read2(data);
         insn->type = insn_fld;
         return;
-<<<<<<< HEAD
       case 0x2:   // C.LW
         *insn = insn_cltype_read(data);
         insn->type = insn_lw;
@@ -417,25 +412,6 @@ void insn_decode(insn_t *insn, u32 data) {
         insn->type = insn_sw;
         return;
       case 0x7:   // C.SD
-=======
-      case 0x2:
-        *insn = insn_cltype_read(data);
-        insn->type = insn_lw;
-        return;
-      case 0x3:
-        *insn = insn_cltype_read2(data);
-        insn->type = insn_ld;
-        return;
-      case 0x5:
-        *insn = insn_cstype_read(data);
-        insn->type = insn_fsd;
-        return;
-      case 0x6:
-        *insn = insn_cstype_read2(data);
-        insn->type = insn_sw;
-        return;
-      case 0x7:
->>>>>>> 917cdf48488da2b21b183d6c83f13e62071db6be
         *insn = insn_cstype_read(data);
         insn->type = insn_sd;
         return;
@@ -445,7 +421,6 @@ void insn_decode(insn_t *insn, u32 data) {
       }
     }
     unreachable();
-<<<<<<< HEAD
     case 0x1:{
       // 第二象限的指令集
       u32 copcode = COPCODE(data);
@@ -1376,14 +1351,6 @@ void insn_decode(insn_t *insn, u32 data) {
         default:
           unreachable();
       }
-=======
-    case 0x1:
-      fatal("unimplemented");
-    case 0x2:
-      fatal("unimplemented");
-    case 0x3:{
-      fatal("unimplemented");
->>>>>>> 917cdf48488da2b21b183d6c83f13e62071db6be
     }
     default:
       unreachable();
