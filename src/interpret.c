@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include "rvemu.h"
 
@@ -129,8 +130,7 @@ FUNC_SIG(sraiw) {
 #undef FUNC
 
 
-// Add Upper Immediate to PC, rd ← pc + offset
-// TODO: 这个是个假数据
+// 18: Add Upper Immediate to PC, rd ← pc + offset
 FUNC_SIG(auipc) {
     u64 val = state->pc + (i64)insn->imm;
     state->gp_regs[insn->rd] = val;
@@ -274,11 +274,154 @@ FUNC_SIG(divw) {
     FUNC(rs2 == 0 ? UINT64_MAX : (i32)((i64)(i32)rs1 / (i64)(i32)rs2));
 }
 
+// 51: Divide Unsigned Word, rd ← u32(rs1) ÷ u32(rs2)
+FUNC_SIG(divuw) {
+    FUNC(rs2 == 0 ? UINT64_MAX : (i32)((u32)rs1 / (u32)rs2));
+}
 
-// // 39: 	Divide Signed, rd ← sx(rs1) ÷ sx(rs2)
-// FUNC_SIG(div) {
+// 52: Remainder Signed Word, rd ← s32(rs1) mod s32(rs2)
+FUNC_SIG(remw) {
+    FUNC(rs2 == 0 ? (i64)(i32)rs1 : (i64)(i32)((i64)(i32)rs1 % (i64)(i32)rs2));
+}
 
-// }
+// 53: Remainder Unsigned Word, rd ← u32(rs1) mod u32(rs2)
+FUNC_SIG(remuw) {
+    FUNC(rs2 == 0 ? (i64)(i32)(u32)rs1 : (i64)(i32)((u32)rs1 % (u32)rs2));
+}
+
+// 54: Subtract Word, rd ← s32(rs1) - s32(rs2)
+FUNC_SIG(subw) {
+    FUNC((i64)(i32)(rs1 - rs2));
+}
+
+// 55: Shift Right Arithmetic Word, rd ← s32(rs1) » rs2
+FUNC_SIG(sraw) {
+    FUNC((i64)(i32)((i32)rs1 >> (rs2 & 0x1f)));
+}
+
+#undef FUNC
+
+
+// 39: Divide Signed, rd ← sx(rs1) ÷ sx(rs2)
+FUNC_SIG(div) {
+    u64 rs1 = state->gp_regs[insn->rs1];
+    u64 rs2 = state->gp_regs[insn->rs2];
+    u64 rd = 0;
+    if(rs2 == 0) {
+        rd = UINT64_MAX;
+    } else if (rs1 == INT64_MIN && rs2 == UINT64_MAX) {
+        rd = INT64_MIN;
+    } else {
+        rd = (i64)rs1 / (i64)rs2;
+    }
+    state->gp_regs[insn->rd] = rd;
+}
+
+// 40: Divide Unsigned, rd ← ux(rs1) ÷ ux(rs2)
+FUNC_SIG(divu) {
+    u64 rs1 = state->gp_regs[insn->rs1];
+    u64 rs2 = state->gp_regs[insn->rs2];
+    u64 rd = 0;
+    if (rs2 == 0) {
+        rd = UINT64_MAX;
+    } else {
+        rd = rs1 / rs2;
+    }
+    state->gp_regs[insn->rd] = rd;
+}
+
+// 41: Remainder Signed, rd ← sx(rs1) mod sx(rs2)
+FUNC_SIG(rem) {
+    u64 rs1 = state->gp_regs[insn->rs1];
+    u64 rs2 = state->gp_regs[insn->rs2];
+    u64 rd = 0;
+    if (rs2 == 0) {
+        rd = rs1;
+    } else if (rs1 == INT64_MIN && rs2 == UINT64_MAX) {
+        rd = 0;
+    } else {
+        rd = (i64)rs1 % (i64)rs2;
+    }
+    state->gp_regs[insn->rd] = rd;
+}
+
+// 45: Load Upper Immediate, rd ← imm
+FUNC_SIG(lui) {
+    state->gp_regs[insn->rd] = (i64)insn->imm;
+}
+
+
+//
+// 跳转指令，根据rs1、rs2寄存器，设置pc指针
+#define FUNC(expr)                                      \
+    u64 rs1 = state->gp_regs[insn->rs1];                \
+    u64 rs2 = state->gp_regs[insn->rs2];                \
+    u64 target_addr = state->pc + (i64)insn->imm;       \
+    if (expr) {                                         \
+        state->reenter_pc = state->pc = target_addr;    \
+        state->exit_reason = direct_branch;             \
+        insn->cont = true;                              \
+    }                                                   \
+
+// 56: Branch Equal, if rs1 = rs2 then pc ← pc + offset
+FUNC_SIG(beq) {
+    FUNC((u64)rs1 == (u64)rs2);
+}
+
+// 57: Branch Not Equal, if rs1 ≠ rs2 then pc ← pc + offset
+FUNC_SIG(bne) {
+    FUNC((u64)rs1 != (u64)rs2);
+}
+
+// 58: Branch Less Than, if rs1 < rs2 then pc ← pc + offset
+FUNC_SIG(blt) {
+    FUNC((i64)rs1 < (i64)rs2);
+}
+
+// 59: Branch Greater than Equal, if rs1 ≥ rs2 then pc ← pc + offset
+FUNC_SIG(bge) {
+    FUNC((i64)rs1 >= (i64)rs2);
+}
+
+// 60: 	Branch Less Than Unsigned, if rs1 < rs2 then pc ← pc + offset
+FUNC_SIG(bltu) {
+    FUNC((u64)rs1 < (u64)rs2);
+}
+
+// 61: Branch Greater than Equal Unsigned, if rs1 ≥ rs2 then pc ← pc + offset
+FUNC_SIG(bgeu) {
+    FUNC((u64)rs1 >= (u64)rs2);
+}
+#undef FUNC
+
+
+// 62: Jump and Link Register
+// rd ← pc + length(inst)
+// pc ← (rs1 + offset) ∧ -2
+FUNC_SIG(jalr) {
+    u64 rs1 = state->gp_regs[insn->rs1];
+    state->gp_regs[insn->rd] = state->pc + (insn->rvc ? 2 : 4);
+    state->exit_reason = indirect_branch;
+    state->reenter_pc = (rs1 + (i64)insn->imm) & ~(u64)1;
+}
+
+// 63: Jump and Link
+// rd ← pc + length(inst)
+// pc ← pc + offset
+FUNC_SIG(jal) {
+    state->gp_regs[insn->rd] = state->pc + (insn->rvc ? 2 : 4);
+    state->reenter_pc = state->pc + (i64)insn->imm;
+    state->exit_reason = direct_branch;
+}
+
+// 64: 
+FUNC_SIG(ecall) {
+    state->exit_reason = ecall;
+    state->reenter_pc = state->pc + 4;
+}
+
+
+
 
 
 static func_t *funcs[] = {
@@ -322,8 +465,8 @@ static func_t *funcs[] = {
 /* 37  */    func_mulhsu,
 /* 38  */    func_mulhu,
 /* 39  */    func_div,
-/* 40  */    func_empty,
-/* 41  */    func_empty,
+/* 40  */    func_divu,
+/* 41  */    func_rem,
 /* 42  */    func_remu,
 /* 43  */    func_sub,
 /* 44  */    func_sra,
@@ -333,20 +476,20 @@ static func_t *funcs[] = {
 /* 48  */    func_srlw,
 /* 49  */    func_mulw,
 /* 50  */    func_divw,
-/* 51  */    func_empty,
-/* 52  */    func_empty,
-/* 53  */    func_empty,
-/* 54  */    func_empty,
-/* 55  */    func_empty,
-/* 56  */    func_empty,
-/* 57  */    func_empty,
-/* 58  */    func_empty,
-/* 59  */    func_empty,
-/* 60  */    func_empty,
-/* 61  */    func_empty,
-/* 62  */    func_empty,
-/* 63  */    func_empty,
-/* 64  */    func_empty,
+/* 51  */    func_divuw,
+/* 52  */    func_remw,
+/* 53  */    func_remuw,
+/* 54  */    func_subw,
+/* 55  */    func_sraw,
+/* 56  */    func_beq,
+/* 57  */    func_bne,
+/* 58  */    func_blt,
+/* 59  */    func_bge,
+/* 60  */    func_bltu,
+/* 61  */    func_bgeu,
+/* 62  */    func_jalr,
+/* 63  */    func_jal,
+/* 64  */    func_ecall,
 /* 65  */    func_empty,
 /* 66  */    func_empty,
 /* 67  */    func_empty,
