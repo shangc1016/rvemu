@@ -9,13 +9,13 @@ typedef void (func_t)(state_t *, insn_t *);
 
 
 // 这个FUNC的模板是 rd = mem(foo(rs1) + bar(imm))
-#define FUNC(type) \
+#define FUNC(type)                                         \
     u64 addr = state->gp_regs[insn->rs1] + (i64)insn->imm; \
-    state->gp_regs[insn->rd] = *(type *)TO_HOST(addr); \
+    state->gp_regs[insn->rd] = *(type *)TO_HOST(addr);     \
 
 // function signature
-#define FUNC_SIG(type) \
-    static void func_##type(state_t *state, insn_t *insn)
+#define FUNC_SIG(type)                                     \
+    static void func_##type(state_t *state, insn_t *insn)  \
 
 // 0: load byte, rd = (i8)[rs1 + imm]
 FUNC_SIG(lb) {
