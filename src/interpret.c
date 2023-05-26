@@ -1,5 +1,10 @@
+#ifndef __INTERPRET_H_
+#define __INTERPRET_H_
+
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "rvemu.h"
 
 static void func_empty(state_t *state, insn_t *insn) {}
@@ -420,8 +425,443 @@ FUNC_SIG(ecall) {
     state->reenter_pc = state->pc + 4;
 }
 
+// 状态寄存器
+#define FUNC()                      \
+    switch (insn->csr) {            \
+        case fflags:                \
+        case frm:                   \
+        case fcsr:                  \
+            break;                  \
+        default:                    \
+            fatal("unsupport csr"); \
+    }                               \
+    state->gp_regs[insn->rd] = 0;   \
 
 
+// 65: 
+FUNC_SIG(csrrc) {
+    FUNC();
+}
+
+// 66
+FUNC_SIG(csrrci) {
+    FUNC();
+}
+
+// 67
+FUNC_SIG(csrrs) {
+    FUNC();
+}
+
+// 68
+FUNC_SIG(csrrsi) {
+    FUNC();
+}
+
+// 69
+FUNC_SIG(csrrw) {
+    FUNC();
+}
+
+// 70
+FUNC_SIG(csrrwi) {
+    FUNC();
+}
+
+#undef FUNC
+
+
+// 71: 
+FUNC_SIG(flw) {
+    u64 addr = state->gp_regs[insn->rs1] + (i64)insn->imm;
+    state->fp_regs[insn->rd].v = *(u32 *)TO_HOST(addr) | ((u64) - 1 << 32);
+}
+// 101
+FUNC_SIG(fld) {
+    u64 addr = state->gp_regs[insn->rs1] + (i64)insn->imm;
+    state->fp_regs[insn->rd].v = *(u64 *)TO_HOST(addr);    
+}
+
+
+#define FUNC(type)                                 \
+    u64 rs1 = state->gp_regs[insn->rs1];           \
+    u64 rs2 = state->fp_regs[insn->rs2].v;         \
+    *(type *)TO_HOST(rs1 + insn->imm) = (type)rs2; \
+
+// 72
+FUNC_SIG(fsw) {
+    FUNC(u32);
+}
+
+// 102
+FUNC_SIG(fsd) {
+    FUNC(u64);
+}
+#undef FUNC
+
+
+#define FUNC(expr)                            \
+    f32 rs1 = state->fp_regs[insn->rs1].f;    \
+    f32 rs2 = state->fp_regs[insn->rs2].f;    \
+    f32 rs3 = state->fp_regs[insn->rs3].f;    \
+    state->fp_regs[insn->rd].f = (f32)(expr); \
+
+
+// 73: f[rd] = f[rs1]×f[rs2]+f[rs3]
+FUNC_SIG(fmadd_s) {
+    FUNC(rs1 * rs2 + rs3);
+}
+
+// 74: f[rd] = f[rs1]×f[rs2]-f[rs3]
+FUNC_SIG(fmsub_s) {
+    FUNC(rs1 * rs2 - rs3);
+}
+
+// 75: f[rd] = -f[rs1]×f[rs2]+f[rs3]
+FUNC_SIG(fnmsub_s) {
+    FUNC(-(rs1 * rs2) +rs3);
+}
+
+// 76: f[rd] = -f[rs1]×f[rs2]-f[rs3]
+FUNC_SIG(fnmadd_s) {
+    FUNC(-(rs1 * rs2) - rs3);
+}
+
+#undef FUNC
+
+
+#define FUNC(expr)                         \
+    f64 rs1 = state->fp_regs[insn->rs1].d; \
+    f64 rs2 = state->fp_regs[insn->rs1].d; \
+    f64 rs3 = state->fp_regs[insn->rs1].d; \
+    state->fp_regs[insn->rd].d = (expr);   \
+
+
+// 103: f[rd] = f[rs1]×f[rs2]+f[rs3]
+FUNC_SIG(fmadd_d) {
+    FUNC(rs1 * rs2 + rs3);
+}
+
+
+// 104: f[rd] = f[rs1]×f[rs2]-f[rs3]
+FUNC_SIG(fmsub_d) {
+    FUNC(rs1 * rs2 - rs3);
+}
+
+// 105: f[rd] = -f[rs1]×f[rs2+f[rs3]
+FUNC_SIG(fnmsub_d) {
+    FUNC(-(rs1 * rs2) + rs3);
+}
+
+
+// 106: f[rd] = -f[rs1]×f[rs2]-f[rs3]
+FUNC_SIG(fnmadd_d) {
+    FUNC(-(rs1 * rs2) - rs3);
+}
+
+#undef FUNC
+
+#define FUNC(expr)                                               \
+    f32 rs1 = state->fp_regs[insn->rs1].f;                       \
+    __attribute((unused)) f32 rs2 = state->fp_regs[insn->rs2].f; \
+    state->fp_regs[insn->rs1].f = (f32)(expr);                   \
+
+
+// 77: f[rd] = f[rs1] + f[rs2]
+// rs1、rs2解释为float，然后相加
+// riscv和x86的float相加指令有差别
+FUNC_SIG(fadd_s) {
+    FUNC(rs1 + rs2);
+}
+
+// 78: f[rd] = f[rs1] - f[rs2]
+FUNC_SIG(fsub_s) {
+    FUNC(rs1 - rs2);
+}
+
+// 79: f[rd] = f[rs1] × f[rs2]
+FUNC_SIG(fmul_s) {
+    FUNC(rs1 * rs2);
+}
+
+// 80: f[rd] = f[rs1] / f[rs2]
+FUNC_SIG(fdiv_s) {
+    FUNC(rs1 / rs2);
+}
+
+// 81: f[rd] = sqrt(f[rs1])
+FUNC_SIG(fsqrt_s) {
+    FUNC(sqrtf(rs1));
+}
+
+// 85: f[rd] = min(f[rs1], f[rs2])
+FUNC_SIG(fmin_s) {
+    FUNC(rs1 < rs2 ? rs1 : rs2);
+}
+
+// 86: f[rd] = max(f[rs1], f[rs2])
+FUNC_SIG(fmax_s) {
+    FUNC(rs1 < rs2 ? rs2 : rs1);
+}
+
+#undef FUNC
+
+
+// double
+#define FUNC(expr)                                                 \
+    f64 rs1 = state->fp_regs[insn->rs1].d;                         \
+    __attribute__((unused)) f64 rs2 = state->fp_regs[insn->rs2].d; \
+    state->fp_regs[insn->rd].d = (expr);                           \
+
+// 107: f[rd] = f[rs1] + f[rs2]
+FUNC_SIG(fadd_d) {
+    FUNC(rs1 + rs2);
+}
+
+// 108: f[rd] = f[rs1] - f[rs2]
+FUNC_SIG(fsub_d) {
+    FUNC(rs1 - rs2);
+}
+
+// 109: f[rd] = f[rs1] × f[rs2]
+FUNC_SIG(fmul_d) {
+    FUNC(rs1 * rs2);
+}
+
+// 110: f[rd] = f[rs1] / f[rs2]
+FUNC_SIG(fdiv_d) {
+    FUNC(rs1 / rs2);
+}
+
+// 111: f[rd] = sqrt(f[rs1])
+FUNC_SIG(fsqrt_d) {
+    FUNC(sqrt(rs1));
+}
+
+// 115: f[rd] = min(f[rs1], f[rs2])
+FUNC_SIG(fmin_d) {
+    FUNC(rs1 < rs2 ? rs1 : rs2);
+}
+
+// 116: f[rd] = max(f[rs1], f[rs2])
+FUNC_SIG(fmax_d) {
+    FUNC(rs1 > rs2 ? rs1 : rs2)
+}
+
+#undef FUNC
+
+
+#define FUNC(n, x)                                                                    \
+    u32 rs1 = state->fp_regs[insn->rs1].w;                                            \
+    u32 rs2 = state->fp_regs[insn->rs2].w;                                            \
+    state->fp_regs[insn->rd].v = (u64)fsgnj32(rs1, rs2, n, x) | ((uint64_t)-1 << 32); \
+
+
+// 82: f[rd] = {f[rs2][31], f[rs1][30:0]}
+FUNC_SIG(fsgnj_s) {
+    FUNC(false, false);
+}
+
+// 83: f[rd] = {~f[rs2][31], f[rs1][30:0]}
+FUNC_SIG(fsgnjn_s) {
+    FUNC(true, false);
+}
+
+// 84: f[rd] = {f[rs1][31] ^ f[rs2][31], f[rs1][30:0]}
+FUNC_SIG(fsgnjx_s) {
+    FUNC(false, true);
+}
+
+#undef FUNC
+
+
+#define FUNC(n, x)                                        \
+    u64 rs1 = state->fp_regs[insn->rs1].v;                \
+    u64 rs2 = state->fp_regs[insn->rs2].v;                \
+    state->fp_regs[insn->rd].v = fsgnj64(rs1, rs2, n, x); \
+
+// 112: 
+FUNC_SIG(fsgnj_d) {
+    FUNC(false, false);
+}
+
+// 113: 
+FUNC_SIG(fsgnjn_d) {
+    FUNC(true, false);
+}
+
+// 114: 
+FUNC_SIG(fsgnjx_d) {
+    FUNC(false, true);
+}
+
+#undef FUNC
+
+// 87:
+FUNC_SIG(fcvt_w_s) {
+    state->gp_regs[insn->rd] = (i64)(i32)llrintf(state->fp_regs[insn->rs1].f);
+}
+
+// 88:
+FUNC_SIG(fcvt_wu_s) {
+    state->gp_regs[insn->rd] = (i64)(i32)(u32)llrintf(state->fp_regs[insn->rs1].f);
+}
+
+// 123
+FUNC_SIG(fcvt_w_d) {
+    state->gp_regs[insn->rd] = (i64)(i32)llrint(state->fp_regs[insn->rs1].d);
+}
+// 124
+FUNC_SIG(fcvt_wu_d) {
+    state->gp_regs[insn->rd] = (i64)(i32)(u32)llrint(state->fp_regs[insn->rs1].d);
+}
+
+// 94:
+FUNC_SIG(fcvt_s_w) {
+    state->fp_regs[insn->rd].f = (f32)(i32)state->gp_regs[insn->rs1];
+}
+
+// 95:
+FUNC_SIG(fcvt_s_wu) {
+    state->fp_regs[insn->rd].f = (f32)(u32)state->gp_regs[insn->rs1];
+}
+
+// 125
+FUNC_SIG(fcvt_d_w) {
+    state->fp_regs[insn->rd].d = (f64)(i32)state->gp_regs[insn->rs1];
+}
+// 126
+FUNC_SIG(fcvt_d_wu) {
+    state->fp_regs[insn->rd].d = (f64)(u32)state->gp_regs[insn->rs1];
+}
+
+// 89
+FUNC_SIG(fmv_x_w) {
+    state->gp_regs[insn->rd] = (i64)(i32)state->fp_regs[insn->rs1].w;
+}
+
+// 96
+FUNC_SIG(fmv_w_x) {
+    state->fp_regs[insn->rd].w = (u32)state->gp_regs[insn->rs1];
+}
+
+// 129
+FUNC_SIG(fmv_x_d) {
+    state->gp_regs[insn->rd] = state->fp_regs[insn->rs1].v;
+}
+
+// 132
+FUNC_SIG(fmv_d_x) {
+    state->fp_regs[insn->rd].v = state->gp_regs[insn->rs1];
+}
+
+// float
+#define FUNC(expr)                         \
+    f32 rs1 = state->fp_regs[insn->rs1].f; \
+    f32 rs2 = state->fp_regs[insn->rs2].f; \
+    state->gp_regs[insn->rd] = (expr);     \
+
+// 90: x[rd] = f[rs1] == f[rs2]
+FUNC_SIG(feq_s) {
+    FUNC(rs1 == rs2);
+}
+
+// 91: x[rd] = f[rs1] < f[rs2]
+FUNC_SIG(flt_s) {
+    FUNC(rs1 < rs2);
+}
+
+// 92: x[rd] = f[rs1] <= f[rs2]
+FUNC_SIG(fle_s) {
+    FUNC(rs1 <= rs2);
+}
+
+#undef FUNC
+
+
+#define FUNC(expr)                         \
+    f64 rs1 = state->fp_regs[insn->rs1].d; \
+    f64 rs2 = state->fp_regs[insn->rs2].d; \
+    state->gp_regs[insn->rd] = (expr);     \
+
+// 119
+FUNC_SIG(feq_d) {
+    FUNC(rs1 == rs2);
+}
+
+// 120
+FUNC_SIG(flt_d) {
+    FUNC(rs1 < rs2);
+}
+
+// 121
+FUNC_SIG(fle_d) {
+    FUNC(rs1 <= rs2);
+}
+
+
+// 93
+// https://msyksphinz-self.github.io/riscv-isadoc/html/rvfd.html
+// 
+FUNC_SIG(fclass_s) {
+    state->gp_regs[insn->rd] = f32_classify(state->fp_regs[insn->rs1].f);
+}
+
+// 122
+FUNC_SIG(fclass_d) {
+    state->gp_regs[insn->rd] = f64_classify(state->fp_regs[insn->rs1].d);
+}
+
+// 97
+FUNC_SIG(fcvt_l_s) {
+    state->gp_regs[insn->rd] = (i64)llrintf(state->fp_regs[insn->rs1].f);
+}
+
+// 98
+FUNC_SIG(fcvt_lu_s) {
+    state->gp_regs[insn->rd] = (u64)llrintf(state->fp_regs[insn->rs1].f);
+}
+
+// 127
+FUNC_SIG(fcvt_l_d) {
+    state->gp_regs[insn->rd] = (i64)llrint(state->fp_regs[insn->rs1].d);
+}
+
+// 128
+FUNC_SIG(fcvt_lu_d) {
+    state->gp_regs[insn->rd] = (u64)llrint(state->fp_regs[insn->rs1].d);
+}
+
+// 99
+FUNC_SIG(fcvt_s_l) {
+    state->fp_regs[insn->rd].f = (f32)(i64)state->gp_regs[insn->rs1];
+}
+
+// 100
+FUNC_SIG(fcvt_s_lu) {
+    state->fp_regs[insn->rd].f = (f32)(u64)state->gp_regs[insn->rs1];
+}
+
+
+// 130
+FUNC_SIG(fcvt_d_l) {
+    state->fp_regs[insn->rd].d = (f64)(i64)state->gp_regs[insn->rs1];
+}
+
+// 131
+FUNC_SIG(fcvt_d_lu) {
+    state->fp_regs[insn->rd].d = (f64)(u64)state->gp_regs[insn->rs1];
+}
+
+// 117
+FUNC_SIG(fcvt_s_d) {
+    state->fp_regs[insn->rd].f = (f32)state->fp_regs[insn->rs1].d;
+}
+
+// 118
+FUNC_SIG(fcvt_d_s) {
+    state->fp_regs[insn->rd].d = (f64)state->fp_regs[insn->rs1].f;
+}
 
 
 static func_t *funcs[] = {
@@ -490,75 +930,74 @@ static func_t *funcs[] = {
 /* 62  */    func_jalr,
 /* 63  */    func_jal,
 /* 64  */    func_ecall,
-/* 65  */    func_empty,
-/* 66  */    func_empty,
-/* 67  */    func_empty,
-/* 68  */    func_empty,
-/* 69  */    func_empty,
-/* 70  */    func_empty,
-/* 71  */    func_empty,
-/* 72  */    func_empty,
-/* 73  */    func_empty,
-/* 74  */    func_empty,
-/* 75  */    func_empty,
-/* 76  */    func_empty,
-/* 77  */    func_empty,
-/* 78  */    func_empty,
-/* 79  */    func_empty,
-/* 80  */    func_empty,
-/* 81  */    func_empty,
-/* 82  */    func_empty,
-/* 83  */    func_empty,
-/* 84  */    func_empty,
-/* 85  */    func_empty,
-/* 86  */    func_empty,
-/* 87  */    func_empty,
-/* 88  */    func_empty,
-/* 89  */    func_empty,
-/* 90  */    func_empty,
-/* 91  */    func_empty,
-/* 92  */    func_empty,
-/* 93  */    func_empty,
-/* 94  */    func_empty,
-/* 95  */    func_empty,
-/* 96  */    func_empty,
-/* 97  */    func_empty,
-/* 98  */    func_empty,
-/* 99  */    func_empty,
-/* 100 */    func_empty,
-/* 101 */    func_empty,
-/* 102 */    func_empty,
-/* 103 */    func_empty,
-/* 104 */    func_empty,
-/* 105 */    func_empty,
-/* 106 */    func_empty,
-/* 107 */    func_empty,
-/* 108 */    func_empty,
-/* 109 */    func_empty,
-/* 110 */    func_empty,
-/* 111 */    func_empty,
-/* 112 */    func_empty,
-/* 113 */    func_empty,
-/* 114 */    func_empty,
-/* 115 */    func_empty,
-/* 116 */    func_empty,
-/* 117 */    func_empty,
-/* 118 */    func_empty,
-/* 119 */    func_empty,
-/* 120 */    func_empty,
-/* 121 */    func_empty,
-/* 122 */    func_empty,
-/* 123 */    func_empty,
-/* 124 */    func_empty,
-/* 125 */    func_empty,
-/* 126 */    func_empty,
-/* 127 */    func_empty,
-/* 128 */    func_empty,
-/* 129 */    func_empty,
-/* 130 */    func_empty,
-/* 131 */    func_empty,
-/* 132 */    func_empty,
-/* 133 */    func_empty,
+/* 65  */    func_csrrc,
+/* 66  */    func_csrrci,
+/* 67  */    func_csrrs,
+/* 68  */    func_csrrsi,
+/* 69  */    func_csrrw,
+/* 70  */    func_csrrwi,
+/* 71  */    func_flw,
+/* 72  */    func_fsw,
+/* 73  */    func_fmadd_s,
+/* 74  */    func_fmsub_s,
+/* 75  */    func_fnmsub_s,
+/* 76  */    func_fnmadd_s,
+/* 77  */    func_fadd_s,
+/* 78  */    func_fsub_s,
+/* 79  */    func_fmul_s,
+/* 80  */    func_fdiv_s,
+/* 81  */    func_fsqrt_s,
+/* 82  */    func_fsgnj_s,
+/* 83  */    func_fsgnjn_s,
+/* 84  */    func_fsgnjx_s,
+/* 85  */    func_fmin_s,
+/* 86  */    func_fmax_s,
+/* 87  */    func_fcvt_w_s,
+/* 88  */    func_fcvt_wu_s,
+/* 89  */    func_fmv_x_w,
+/* 90  */    func_feq_s,
+/* 91  */    func_flt_s,
+/* 92  */    func_fle_s,
+/* 93  */    func_fclass_s,
+/* 94  */    func_fcvt_s_w,
+/* 95  */    func_fcvt_s_wu,
+/* 96  */    func_fmv_w_x,
+/* 97  */    func_fcvt_l_s,
+/* 98  */    func_fcvt_lu_s,
+/* 99  */    func_fcvt_s_l,
+/* 100 */    func_fcvt_s_lu,
+/* 101 */    func_fld,
+/* 102 */    func_fsd,
+/* 103 */    func_fmadd_d,
+/* 104 */    func_fmsub_d,
+/* 105 */    func_fnmsub_d,
+/* 106 */    func_fnmadd_d,
+/* 107 */    func_fadd_d,
+/* 108 */    func_fsub_d,
+/* 109 */    func_fmul_d,
+/* 110 */    func_fdiv_d,
+/* 111 */    func_fsqrt_d,
+/* 112 */    func_fsgnj_d,
+/* 113 */    func_fsgnjn_d,
+/* 114 */    func_fsgnjx_d,
+/* 115 */    func_fmin_d,
+/* 116 */    func_fmax_d,
+/* 117 */    func_fcvt_s_d,
+/* 118 */    func_fcvt_d_s,
+/* 119 */    func_feq_d,
+/* 120 */    func_flt_d,
+/* 121 */    func_fle_d,
+/* 122 */    func_fclass_d,
+/* 123 */    func_fcvt_w_d,
+/* 124 */    func_fcvt_wu_d,
+/* 125 */    func_fcvt_d_w,
+/* 126 */    func_fcvt_d_wu,
+/* 127 */    func_fcvt_l_d,
+/* 128 */    func_fcvt_lu_d,
+/* 129 */    func_fmv_x_d,
+/* 130 */    func_fcvt_d_l,
+/* 131 */    func_fcvt_d_lu,
+/* 132 */    func_fmv_d_x,
 };
 
 // 解释执行指令，与此对应的还有JIT just-in-time方式的指令执行方式
@@ -571,6 +1010,9 @@ void exec_block_interp(state_t *state){
         insn_decode(&insn,data);
         // 执行指令
         funcs[insn.type](state, &insn);
+
+        printf("insn.type = %d\n", insn.type);
+        usleep(10000);
         // 因为zero寄存器无论怎么给他赋值其结果都是0，所以执行一条执行
         // 都把zero寄存器清零
         state->gp_regs[zero] = 0;
@@ -584,3 +1026,6 @@ void exec_block_interp(state_t *state){
         state->pc += insn.rvc ? 2 : 4;
     }
 }
+
+
+#endif

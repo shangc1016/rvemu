@@ -1,3 +1,6 @@
+#ifndef __ELFDEF_H_
+#define __ELFDEF_H_
+
 #include "types.h"
 
 #define EI_NIDENT 16
@@ -45,3 +48,7 @@ typedef struct {
   u64 p_memsz;
   u64 p_align;
 } elf64_phdr_t;
+
+
+
+#endif

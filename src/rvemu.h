@@ -210,6 +210,13 @@ enum exit_reason_t {
   ecall,                  // syscall
 };
 
+// csr寄存器
+enum csr_t {
+  fflags = 0x001,
+  frm    = 0x002,
+  fcsr   = 0x003,
+};
+
 typedef struct {
   enum exit_reason_t exit_reason;
   u64 reenter_pc;
@@ -231,3 +238,13 @@ void machine_load_program(machine_t *, char *);
 // interpret.c 
 void exec_block_interp(state_t *);
 
+
+
+// interpret_util.h
+uint64_t mulhu(uint64_t a, uint64_t b);
+int64_t mulh(int64_t a, int64_t b);
+int64_t mulhsu(int64_t a, uint64_t b);
+u32 fsgnj32(u32 a, u32 b, bool n, bool x);
+u64 fsgnj64(u64 a, u64 b, bool n, bool x);
+u16 f32_classify(f32 a);
+u16 f64_classify(f64 a);
