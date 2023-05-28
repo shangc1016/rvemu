@@ -13,7 +13,6 @@ static void func_empty(state_t *state, insn_t *insn) {}
 typedef void (func_t)(state_t *, insn_t *);
 
 
-// 这个FUNC的模板是 rd = mem(foo(rs1) + bar(imm))
 #define FUNC(type)                                         \
     u64 addr = state->gp_regs[insn->rs1] + (i64)insn->imm; \
     state->gp_regs[insn->rd] = *(type *)TO_HOST(addr);     \
@@ -66,14 +65,14 @@ FUNC_SIG(lwu){
     i64 imm = (i64)insn->imm;            \
     state->gp_regs[insn->rd] = (expr);   \
 
-// Add Immediate, rd ← rs1 + sx(imm)
+// 9: Add Immediate, rd ← rs1 + sx(imm)
 FUNC_SIG(addi) {
     FUNC(rs1 + imm);
 }
 
 // Shift Left Logical Immediate, rd ← ux(rs1) « ux(imm)
 FUNC_SIG(slli) {
-    FUNC(rs1 << (imm * 0x3f));
+    FUNC(rs1 << (imm & 0x3f));
 }
 
 // Set Less Than Immediate, rd ← sx(rs1) < sx(imm)
@@ -109,7 +108,7 @@ FUNC_SIG(ori) {
 
 // And Immediate, rd ← ux(rs1) ∧ ux(imm)
 FUNC_SIG(andi) {
-    FUNC((u64)rs1 & (u64)imm);
+    FUNC(rs1 & (u64)imm);
 }
 
 // Add Immediate Word, rd ← s32(rs1) + imm
@@ -407,6 +406,7 @@ FUNC_SIG(jalr) {
     u64 rs1 = state->gp_regs[insn->rs1];
     state->gp_regs[insn->rd] = state->pc + (insn->rvc ? 2 : 4);
     state->exit_reason = indirect_branch;
+    // 设置重入的pc指针
     state->reenter_pc = (rs1 + (i64)insn->imm) & ~(u64)1;
 }
 
@@ -415,7 +415,7 @@ FUNC_SIG(jalr) {
 // pc ← pc + offset
 FUNC_SIG(jal) {
     state->gp_regs[insn->rd] = state->pc + (insn->rvc ? 2 : 4);
-    state->reenter_pc = state->pc + (i64)insn->imm;
+    state->reenter_pc = state->pc = state->pc + (i64)insn->imm;
     state->exit_reason = direct_branch;
 }
 
@@ -1007,11 +1007,15 @@ void exec_block_interp(state_t *state){
         // 从pc指针地址处取指
         u32 data = *(u32 *)TO_HOST(state->pc);
         // 指令解码到insn
-        insn_decode(&insn,data);
+        insn_decode(&insn, data);
+        
+        // printf("t:%03d\trs1:%02d\trs2:%02d\t[rs1]:0x%lx\t[rs2]:0x%lx\n", 
+        //     insn.type, insn.rs1, insn.rs2, 
+        //     state->gp_regs[insn.rs1], state->gp_regs[insn.rs2]);
+        
         // 执行指令
         funcs[insn.type](state, &insn);
-
-        printf("insn.type = %d\n", insn.type);
+        
         usleep(10000);
         // 因为zero寄存器无论怎么给他赋值其结果都是0，所以执行一条执行
         // 都把zero寄存器清零
@@ -1019,7 +1023,8 @@ void exec_block_interp(state_t *state){
         // 如果指令需要跳转，先break出去
         // 有两种情况：jump指令，ecall系统调用，
         // pc指针改变
-        if(insn.cont) break;
+    
+        if (insn.cont) break;
         // 如果指令不需要跳转，那就pc增加，继续执行
         // 此处检查这条指令是不是riscv 压缩指令，
         // 是的话指针后移2个字节16位，否则普通指令后移4个字节32位

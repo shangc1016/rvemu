@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +33,9 @@
 
 #define GUEST_MEMORY_OFFSET 0x088800000000ULL
 
+// riscv64 program -> local host
 #define TO_HOST(addr) (addr + GUEST_MEMORY_OFFSET)
+// local host -> riscv64
 #define TO_GUEST(addr) (addr - GUEST_MEMORY_OFFSET)
 
 // instruction
@@ -44,8 +47,10 @@ enum insn_type_t {
 /* 4   */   insn_lbu,
 /* 5   */   insn_lhu,
 /* 6   */   insn_lwu,
+
 /* 7   */   insn_fence,
 /* 8   */   insn_fence_i,
+
 /* 9   */   insn_addi,
 /* 10  */   insn_slli,
 /* 11  */   insn_slti,
@@ -60,10 +65,12 @@ enum insn_type_t {
 /* 20  */   insn_slliw,
 /* 21  */   insn_srliw,
 /* 22  */   insn_sraiw,
+
 /* 23  */   insn_sb,
 /* 24  */   insn_sh,
 /* 25  */   insn_sw,
 /* 26  */   insn_sd,
+
 /* 27  */   insn_add,
 /* 28  */   insn_sll,
 /* 29  */   insn_slt,
@@ -72,6 +79,7 @@ enum insn_type_t {
 /* 32  */   insn_srl,
 /* 33  */   insn_or,
 /* 34  */   insn_and,
+
 /* 35  */   insn_mul,
 /* 36  */   insn_mulh,
 /* 37  */   insn_mulhsu,
@@ -80,9 +88,11 @@ enum insn_type_t {
 /* 40  */   insn_divu,
 /* 41  */   insn_rem,
 /* 42  */   insn_remu,
+
 /* 43  */   insn_sub,
 /* 44  */   insn_sra,
 /* 45  */   insn_lui,
+
 /* 46  */   insn_addw,
 /* 47  */   insn_sllw,
 /* 48  */   insn_srlw,
@@ -93,23 +103,28 @@ enum insn_type_t {
 /* 53  */   insn_remuw,
 /* 54  */   insn_subw,
 /* 55  */   insn_sraw,
+
 /* 56  */   insn_beq,
 /* 57  */   insn_bne,
 /* 58  */   insn_blt,
 /* 59  */   insn_bge,
 /* 60  */   insn_bltu,
 /* 61  */   insn_bgeu,
+
 /* 62  */   insn_jalr,
 /* 63  */   insn_jal,
 /* 64  */   insn_ecall,
+
 /* 65  */   insn_csrrc,
 /* 66  */   insn_csrrci,
 /* 67  */   insn_csrrs,
 /* 68  */   insn_csrrsi,
 /* 69  */   insn_csrrw,
 /* 70  */   insn_csrrwi,
+
 /* 71  */   insn_flw,
 /* 72  */   insn_fsw,
+
 /* 73  */   insn_fmadd_s,
 /* 74  */   insn_fmsub_s,
 /* 75  */   insn_fnmsub_s,
@@ -119,14 +134,18 @@ enum insn_type_t {
 /* 79  */   insn_fmul_s,
 /* 80  */   insn_fdiv_s,
 /* 81  */   insn_fsqrt_s,
+
 /* 82  */   insn_fsgnj_s,
 /* 83  */   insn_fsgnjn_s,
 /* 84  */   insn_fsgnjx_s,
+
 /* 85  */   insn_fmin_s,
 /* 86  */   insn_fmax_s,
+
 /* 87  */   insn_fcvt_w_s,
 /* 88  */   insn_fcvt_wu_s,
 /* 89  */   insn_fmv_x_w,
+
 /* 90  */   insn_feq_s,
 /* 91  */   insn_flt_s,
 /* 92  */   insn_fle_s,
@@ -198,6 +217,12 @@ typedef struct {
 } mmu_t;
 
 void mmu_load_elf(mmu_t *, int);
+u64 mmu_alloc(mmu_t *, i64);
+
+// 向内存中写数据
+inline void mmu_write(u64 addr, u8 *data, size_t len) {
+ memcpy((void*)TO_HOST(addr), (void*)data, len);
+}
 
 // state.c
 
@@ -233,7 +258,22 @@ typedef struct {
 
 enum exit_reason_t machine_step(machine_t *);
 void machine_load_program(machine_t *, char *);
+void machine_setup(machine_t *, int, char **);
 
+
+// 下面这俩函数是为了在syscall之后，操控寄存器用的
+
+// 获得寄存器的值
+inline u64 machine_get_gp_reg(machine_t * machine, i32 reg) {
+  assert(reg >= 0 && reg <= num_gp_regs);
+  return machine->state.gp_regs[reg];
+}
+
+// 写入寄存器的值
+inline void machine_set_gp_reg(machine_t * machine, i32 reg, u64 data) {
+  assert(reg >= 0 && reg <= num_gp_regs);
+  machine->state.gp_regs[reg] = data;
+}
 
 // interpret.c 
 void exec_block_interp(state_t *);
