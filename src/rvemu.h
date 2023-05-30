@@ -279,6 +279,9 @@ inline void machine_set_gp_reg(machine_t * machine, i32 reg, u64 data) {
 void exec_block_interp(state_t *);
 
 
+// syscall.c
+u64 do_syscall(machine_t *, u64);
+
 
 // interpret_util.h
 uint64_t mulhu(uint64_t a, uint64_t b);
@@ -288,3 +291,5 @@ u32 fsgnj32(u32 a, u32 b, bool n, bool x);
 u64 fsgnj64(u64 a, u64 b, bool n, bool x);
 u16 f32_classify(f32 a);
 u16 f64_classify(f64 a);
+
+

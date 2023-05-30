@@ -84,4 +84,10 @@ void machine_setup(machine_t *machine, int argc, char *argv[]) {
   machine->state.gp_regs[sp] -= 8;
   mmu_write(machine->state.gp_regs[sp], (u8 *)&argc, sizeof(u64));
 
+  // 最后的空间布局
+  // 
+  //  | <--代码段--> | <-------栈-------> <argc, argv[0] ... argv[argc - 1], envp, auxv>| 从发这个开始的地址都是mmap映射到的，封装成mmu_alloc函数
+  //  ^mmap的起始地址 ^ mmu.base指向此处                                                  ^ mmu.alloc指向此处，随着mmu_alloc的调用不断后移，每次mmu_alloc都映射到mmu.alloc的位置
+  //  
+
 }
