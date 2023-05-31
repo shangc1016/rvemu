@@ -1008,15 +1008,10 @@ void exec_block_interp(state_t *state){
         u32 data = *(u32 *)TO_HOST(state->pc);
         // 指令解码到insn
         insn_decode(&insn, data);
-        
-        // printf("t:%03d\trs1:%02d\trs2:%02d\t[rs1]:0x%lx\t[rs2]:0x%lx\n", 
-        //     insn.type, insn.rs1, insn.rs2, 
-        //     state->gp_regs[insn.rs1], state->gp_regs[insn.rs2]);
-        
+
         // 执行指令
         funcs[insn.type](state, &insn);
         
-        usleep(10000);
         // 因为zero寄存器无论怎么给他赋值其结果都是0，所以执行一条执行
         // 都把zero寄存器清零
         state->gp_regs[zero] = 0;
