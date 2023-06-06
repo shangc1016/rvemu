@@ -1,39 +1,62 @@
-#include <assert.h>
-#include <fcntl.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <string.h>
-
 #include "rvemu.h"
 
 
 enum exit_reason_t machine_step(machine_t *m){
-  while(true){
-    m->state.exit_reason = none;
-    // 指令翻译执行
-    exec_block_interp(&m->state);
+    while(true) {
+        bool hot = true;
 
+        // 根据当前机器的pc指针，在jit cache中检索，看看能不能找到相应的host的可执行代码片段
+        u8 *code = cache_lookup(m->cache, m->state.pc);
+        if (code == NULL) {
+            // 找不到的话，更新这段代码的hot计数值
+            hot = cache_hot(m->cache, m->state.pc);
+            if (hot) {
+                printf("pc = 0x%lx，生成jit代码缓存\n", m->state.pc);
+                // 如果这段代码是hot的，而且在jit cache中没有缓存，那现在就编译成host的代码
+                str_t source = machine_genblock(m);
+                // source就是host的代码
+                // 然后编译成一段代码code，而且把jit的代码已经加入到jit cache中
+                code = machine_compile(m, source);
+            }
+        }
 
-    assert(m->state.exit_reason != none);
+        // 如果不是hot，就还是按照取指、译码、执行这样一步一步来做
+        if (!hot) {
+            code = (u8 *)exec_block_interp;
+        }
+        // 
+        while (true) {
+            m->state.exit_reason = none;
+            ((exec_block_func_t)code)(&m->state);
+            assert(m->state.exit_reason != none);
 
-    // 因为在指令执行中已经设置过了reenter_pc
-    // 如果是跳转指令，将pc指针重设为reenter_pc，然后继续执行
-    if(m->state.exit_reason == indirect_branch || 
-      m->state.exit_reason == direct_branch){
+            if (m->state.exit_reason == indirect_branch ||
+                m->state.exit_reason == direct_branch ) {
+                code = cache_lookup(m->cache, m->state.reenter_pc);
+                if (code != NULL) continue;
+            }
+
+            if (m->state.exit_reason == interp) {
+                m->state.pc = m->state.reenter_pc;
+                code = (u8 *)exec_block_interp;
+                continue;
+            }
+
+            break;
+        }
+
         m->state.pc = m->state.reenter_pc;
-        continue;
+        switch (m->state.exit_reason) {
+        case direct_branch:
+        case indirect_branch:
+            // continue execution
+            break;
+        case ecall:
+            return ecall;
+        default:
+            unreachable();
+        }
     }
-    // 这儿break是因为遇到了syscall
-    break;
-  }
-
-  m->state.pc = m->state.reenter_pc;
-  // 先assert一下跳出原因就是syscall
-  assert(m->state.exit_reason == ecall);
-  // 这儿可以看到，如果跳出循环，就是遇到了syscall，
-  // 需要在外层处理syscall，然后继续返回回来执行
-  return ecall;
 }
 
 

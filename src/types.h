@@ -1,5 +1,5 @@
-#ifndef RVEMU_TYPE_H
-#define RVEMU_TYPE_H
+#ifndef RVEMU_TYPES_H
+#define RVEMU_TYPES_H
 
 #include <stdint.h>
 

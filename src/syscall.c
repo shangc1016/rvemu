@@ -1,11 +1,5 @@
-#include <fcntl.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <signal.h>
-
 #include "rvemu.h"
+
 
 // 所有的syscall
 #define SYS_exit             93
@@ -146,10 +140,11 @@ static u64 sys_getpid(machine_t *m) {
 
 // 129
 static u64 sys_kill(machine_t *m) {
-    u64 pid = machine_get_gp_reg(m, a0);
-    u64 sig = machine_get_gp_reg(m, a1);
-    // 
-    return kill((pid_t)pid, (int)sig);
+    __attribute__((unused)) u64 pid = machine_get_gp_reg(m, a0);
+    __attribute__((unused)) u64 sig = machine_get_gp_reg(m, a1);
+    // FIXME
+    // return kill((pid_t)pid, (int)sig);
+    return 0;
 }
 
 // 131: thread group kill

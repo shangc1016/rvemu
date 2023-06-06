@@ -1,3 +1,6 @@
+#ifndef RVEMU_REG_H_
+#define RVEMU_REG_H_
+
 #include "types.h"
 
 // general propose,通用寄存器
@@ -28,3 +31,6 @@ typedef union {
   f64 d;    // 解释为f64
   f32 f;    // 解释为f32
 }fp_reg_t;
+
+
+#endif

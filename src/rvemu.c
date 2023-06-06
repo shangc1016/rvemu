@@ -13,6 +13,8 @@ int main(int argc, char *argv[]) {
   assert(argc > 1);
 
   machine_t machine = {0};
+  // 在这儿初始化machine.cache，通过mmap分配给cache一大块内存，用作jit代码的cache
+  machine.cache = new_cache();
   
   // 加载elf可执行文件
   machine_load_program(&machine, argv[1]);
@@ -23,8 +25,7 @@ int main(int argc, char *argv[]) {
   while(true){
     enum exit_reason_t exit_reason = machine_step(&machine);
     assert(exit_reason == ecall);
-    // TODO: 在这儿处理syscall的逻辑
-    // 
+    
     // 发生syscall的时候，a7寄存器保存的就是syscall number
     // a0-a6保存的就是syscall的参数
     u64 syscall_num = machine_get_gp_reg(&machine, a7);

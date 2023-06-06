@@ -1,3 +1,6 @@
+#ifndef RVEMU_RVEMU_H_
+#define RVEMU_RVEMU_H_
+
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -5,7 +8,6 @@
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -224,6 +226,91 @@ inline void mmu_write(u64 addr, u8 *data, size_t len) {
  memcpy((void*)TO_HOST(addr), (void*)data, len);
 }
 
+
+// stack.c
+#define STACK_CAP 256
+typedef struct {
+  i64 top;
+  u64 elems[STACK_CAP];
+} stack_t;
+
+void stack_push(stack_t *, u64);
+bool stack_pop(stack_t *, u64 *);
+void stack_reset(stack_t *);
+void stack_print(stack_t *);
+
+// str.c
+
+#define STR_MAX_PREALLOC (1024 * 1024)
+// 这个是根据buf指针的地址计算得到buf所在的strhdr_t的位置吗？柔性数组?
+#define STRHDR(s) ((strhdr_t *)((s) - (sizeof(strhdr_t))))
+
+#define DECLEAR_STATIC_STR(name) \
+  static str_t name = NULL;      \
+  if (name) str_clear(name);     \
+  else name = str_new();         \
+
+typedef char* str_t;
+
+typedef struct {
+  u64 len;      // str已经使用的空间大小
+  u64 alloc;    // str提前分配的空间大小
+  char buf[];
+} strhdr_t;
+
+inline str_t str_new() {
+  strhdr_t *h = (strhdr_t *)calloc(1, sizeof(strhdr_t));
+  return h->buf;
+}
+
+inline size_t str_len(const str_t str) {
+  return STRHDR(str)->len;
+}
+
+void str_clear(str_t);
+
+str_t str_append(str_t, const char *);
+
+
+
+// set.c
+#define SET_SIZE (32 * 1024)
+
+typedef struct {
+  u64 table[SET_SIZE];
+} set_t;
+
+bool set_has(set_t *, u64);
+bool set_add(set_t *, u64);
+void set_reset(set_t *);
+
+
+// cache.c
+#define CACHE_ENTRY_SIZE  (64 * 1024)
+#define CACHE_SIZE (64 * 1024 * 1024)
+
+//使用哈希表额度方式存储pc地址和相应的host本地指令的对应关系
+typedef struct {
+  u64 pc;       // key
+  u64 hot;      // hot计数器，记录pc指针指向的这段代码的hot程度
+  u64 offset;   // value, indicate therr offset in jitcode cache
+} cache_item_t;
+
+
+// 整个哈希表
+typedef struct {
+  u8 *jitcode;    // reserved memory for jit cache
+  u64 offset;     // the real used jitcode memory
+  cache_item_t table[CACHE_ENTRY_SIZE];
+} cache_t;
+
+
+cache_t *new_cache();
+u8 *cache_lookup(cache_t *, u64);
+u8 *cache_add(cache_t *, u64, u8 *, size_t, u64);
+bool cache_hot(cache_t *, u64);
+
+
 // state.c
 
 // 译码执行的退出原因，可能是因为跳转指令而退出最里面的循环
@@ -232,6 +319,7 @@ enum exit_reason_t {
   none,
   direct_branch,          // 运行前知道的跳转
   indirect_branch,        // 运行时知道的跳转
+  interp,                 // jit缓存的一小块代码运行结束之后的exit_reason
   ecall,                  // syscall
 };
 
@@ -254,24 +342,33 @@ typedef struct {
 typedef struct {
   state_t state;
   mmu_t mmu;
+  cache_t *cache;
 } machine_t;
+
+// 定义一个同一个模拟器执行函数
+// 这个接口有两个实现，普通的exec_block_interp
+// 还有另外一个就是jit缓存的本地调用的函数签名
+typedef void (*exec_block_func_t)(state_t *);
 
 enum exit_reason_t machine_step(machine_t *);
 void machine_load_program(machine_t *, char *);
 void machine_setup(machine_t *, int, char **);
+// jit about func
+str_t machine_genblock(machine_t *);
+u8 *machine_compile(machine_t *, str_t);
 
 
 // 下面这俩函数是为了在syscall之后，操控寄存器用的
 
 // 获得寄存器的值
 inline u64 machine_get_gp_reg(machine_t * machine, i32 reg) {
-  assert(reg >= 0 && reg <= num_gp_regs);
+  assert(reg >= 0 && reg < num_gp_regs);
   return machine->state.gp_regs[reg];
 }
 
 // 写入寄存器的值
 inline void machine_set_gp_reg(machine_t * machine, i32 reg, u64 data) {
-  assert(reg >= 0 && reg <= num_gp_regs);
+  assert(reg >= 0 && reg < num_gp_regs);
   machine->state.gp_regs[reg] = data;
 }
 
@@ -292,4 +389,4 @@ u64 fsgnj64(u64 a, u64 b, bool n, bool x);
 u16 f32_classify(f32 a);
 u16 f64_classify(f64 a);
 
-
+#endif
