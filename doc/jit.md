@@ -158,3 +158,232 @@ u8 *machine_compile(machine_t *m, str_t source) {
 ```
 
 machine_compile()接下来的部分就是按照elf文件格式解析对象文件，然后把data段写入到jitcode中，并且设置jit的哈希表`<pc, offset>`。这块内容涉及到对象文件的elf格式，还不熟悉，可以看一下作者的另一个关于rv链接器的课程。
+
+
+#### jit在host机器的C代码
+
+在codegen中的`machine_genblock()`函数最后打印出source。然后让rvemu模拟器执行prime程序。可以看到在终端打印出的C代码类似于如下所示，可以看到每条rv64的指令被翻译成了一个C代码块。通过goto跳转。在codegen.c中的`DEFINE_TRACE_USAGE`就是记录了这条指令使用到了哪些寄存器并且把这个记录下来，在生成的C代码中体现出来就是对寄存器赋值恢复的这个过程。为什么要这么做，作者的解释是提高性能。可能是通过`state->`指针的方式访存开销比较大。
+```c
+#include <stdint.h>
+#include <stdbool.h>
+#define OFFSET 0x088800000000ULL               
+#define TO_HOST(addr) (addr + OFFSET)          
+enum exit_reason_t {                           
+   none,                                       
+   direct_branch,                              
+   indirect_branch,                            
+   interp,                                     
+   ecall,                                      
+};                                             
+typedef union {                                
+    uint64_t v;                                
+    uint32_t w;                                
+    double d;                                  
+    float f;                                   
+} fp_reg_t;                                    
+typedef struct {                               
+    enum exit_reason_t exit_reason;            
+    uint64_t reenter_pc;                       
+    uint64_t gp_regs[32];                      
+    fp_reg_t fp_regs[32];                      
+    uint64_t pc;                               
+    uint32_t fcsr;                             
+} state_t;                                     
+void start(volatile state_t *restrict state) { 
+    uint64_t x1 = state->gp_regs[1];
+    uint64_t x2 = state->gp_regs[2];
+    uint64_t x8 = state->gp_regs[8];
+    uint64_t x10 = state->gp_regs[10];
+    uint64_t x14 = state->gp_regs[14];
+    uint64_t x15 = state->gp_regs[15];
+    fp_reg_t f15 = state->fp_regs[15];
+insn_101a2: {
+    uint64_t rs1 = x2;
+    x2 = rs1 + (int64_t)-48LL;
+    goto insn_101a4;
+}
+insn_101a4: {
+    uint64_t rs1 = x2;
+    uint64_t rs2 = x1;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)40LL) = (uint64_t)rs2;
+    goto insn_101a6;
+}
+insn_101a6: {
+    uint64_t rs1 = x2;
+    uint64_t rs2 = x8;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)32LL) = (uint64_t)rs2;
+    goto insn_101a8;
+}
+insn_101a8: {
+    uint64_t rs1 = x2;
+    x8 = rs1 + (int64_t)48LL;
+    goto insn_101aa;
+}
+insn_101aa: {
+    uint64_t rs1 = x8;
+    uint64_t rs2 = x10;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)-40LL) = (uint64_t)rs2;
+    goto insn_101ae;
+}
+insn_101ae: {
+    uint64_t rs1 = x8;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)-40LL);
+    x14 = rd;
+    goto insn_101b2;
+}
+insn_101b2: {
+    uint64_t rs1 = 0;
+    x15 = rs1 + (int64_t)1LL;
+    goto insn_101b4;
+}
+insn_101b4: {
+    uint64_t rs1 = x14;
+    uint64_t rs2 = x15;
+    if ((uint64_t)rs1 != (uint64_t)rs2) {
+        goto insn_101bc;
+    }
+    goto insn_101b8;
+}
+insn_101b8: {
+    uint64_t rs1 = 0;
+    x15 = rs1 + (int64_t)0LL;
+    goto insn_101ba;
+}
+insn_101ba: {
+    goto insn_10218;
+}
+insn_10218: {
+    uint64_t rs1 = 0;
+    uint64_t rs2 = x15;
+    x10 = rs1 + rs2;
+    goto insn_1021a;
+}
+insn_1021a: {
+    uint64_t rs1 = x2;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)40LL);
+    x1 = rd;
+    goto insn_1021c;
+}
+insn_1021c: {
+    uint64_t rs1 = x2;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)32LL);
+    x8 = rd;
+    goto insn_1021e;
+}
+insn_1021e: {
+    uint64_t rs1 = x2;
+    x2 = rs1 + (int64_t)48LL;
+    goto insn_10220;
+}
+insn_10220: {
+    uint64_t rs1 = x1;
+    state->exit_reason = indirect_branch;
+    state->reenter_pc = (rs1 + (int64_t)0LL) & ~(uint64_t)1;
+    goto end;
+}
+insn_101bc: {
+    uint64_t rs1 = x8;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)-40LL);
+    x14 = rd;
+    goto insn_101c0;
+}
+insn_101c0: {
+    uint64_t rs1 = 0;
+    x15 = rs1 + (int64_t)2LL;
+    goto insn_101c2;
+}
+insn_101c2: {
+    uint64_t rs1 = x14;
+    uint64_t rs2 = x15;
+    if ((uint64_t)rs1 != (uint64_t)rs2) {
+        goto insn_101ca;
+    }
+    goto insn_101c6;
+}
+insn_101c6: {
+    uint64_t rs1 = 0;
+    x15 = rs1 + (int64_t)1LL;
+    goto insn_101c8;
+}
+insn_101c8: {
+    goto insn_10218;
+}
+insn_101ca: {
+    uint64_t rs1 = 0;
+    x15 = rs1 + (int64_t)2LL;
+    goto insn_101cc;
+}
+insn_101cc: {
+    uint64_t rs1 = x8;
+    uint64_t rs2 = x15;
+    *(uint32_t *)TO_HOST(rs1 + (int64_t)-20LL) = (uint32_t)rs2;
+    goto insn_101d0;
+}
+insn_101d0: {
+    goto insn_101ee;
+}
+insn_101ee: {
+    uint64_t rs1 = x8;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)-40LL);
+    x10 = rd;
+    goto insn_101f2;
+}
+insn_101f2: {
+    x1 = 66038LL;
+    goto insn_10294;
+}
+insn_10294: {
+    uint64_t rs1 = x2;
+    x2 = rs1 + (int64_t)-32LL;
+    goto insn_10296;
+}
+insn_10296: {
+    uint64_t rs1 = x2;
+    uint64_t rs2 = x1;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)24LL) = (uint64_t)rs2;
+    goto insn_10298;
+}
+insn_10298: {
+    uint64_t rs1 = x2;
+    uint64_t rs2 = x8;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)16LL) = (uint64_t)rs2;
+    goto insn_1029a;
+}
+insn_1029a: {
+    uint64_t rs1 = x2;
+    x8 = rs1 + (int64_t)32LL;
+    goto insn_1029c;
+}
+insn_1029c: {
+    uint64_t rs1 = x8;
+    uint64_t rs2 = x10;
+    *(uint64_t *)TO_HOST(rs1 + (int64_t)-24LL) = (uint64_t)rs2;
+    goto insn_102a0;
+}
+insn_102a0: {
+    uint64_t rs1 = x8;
+    int64_t rd = *(int64_t *)TO_HOST(rs1 + (int64_t)-24LL);
+    x15 = rd;
+    goto insn_102a4;
+}
+insn_102a4: {
+    uint64_t rs1 = x15;
+    f15.d = (double)(int64_t)rs1;
+    goto insn_102a8;
+}
+insn_102a8: {
+    state->exit_reason = interp;
+    state->reenter_pc = 66216ULL;
+    goto end;
+}
+end:;
+    state->gp_regs[1] = x1;
+    state->gp_regs[2] = x2;
+    state->gp_regs[8] = x8;
+    state->gp_regs[10] = x10;
+    state->gp_regs[14] = x14;
+    state->gp_regs[15] = x15;
+    state->fp_regs[15] = f15;
+}
+
+```
