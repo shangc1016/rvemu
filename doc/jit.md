@@ -1,7 +1,7 @@
 在本项目中使用到了jit方法来加速模拟器的执行效率。
 
-使用jit方法的前提是利用到了程序执行的局部性原理。因为程序本身包含了很多相似的局部部分，或者说程序中存在大量的循环、跳转逻辑，使得具有这种时间、空间上的局部性。即当前执行的代码，可能会在不就得将来重复执行，当前访问的数据可能会在不久的将来重复访问。  
-因此出于程序执行时间局部性的考虑，有理由相信机器可能在不久的将来会重复执行当前pc所指向的这段代码。所以在本项目中使用了哈希表的方式把需要模拟执行的`<pc, 在本地机器上执行的指令>`缓存起来。在模拟target架构的程序执行的时候，首先去检查缓存中是否有相同的pc地址，如果有的话，我们就可以直接执行host架构的相同逻辑的模拟程序，不用再一条条的模拟取指、译码、执行这个循环了。从而达到提高性能的作用。  
+使用jit方法的前提是利用到了程序执行的局部性原理。因为程序执行过程的指令集合本身包含了很多相似的局部部分，或者说程序中存在大量的循环、跳转逻辑，使得具有这种时间、空间上的局部性。即当前执行的代码，可能会在不就得将来重复执行，当前访问的数据可能会在不久的将来重复访问。    
+因此出于程序执行时间局部性的考虑，有理由相信机器可能在不久的将来会重复执行当前pc所指向的这段代码。所以在本项目中使用了哈希表的方式把需要模拟执行的`<pc, 在本地机器上执行的指令>`缓存起来。在模拟target架构的程序执行的时候，首先去检查缓存中是否有相同的pc地址，如果有的话，我们就可以直接执行host架构的相同逻辑的已经编译好的elf程序，不用再一条条的模拟取指、译码、执行这个循环了。从而达到提高性能的作用。  
 
 
 首先分析一下jit执行的流程
@@ -84,3 +84,77 @@ enum exit_reason_t machine_step(machine_t *m){
 
 
 - `machine_genblock`生成的jit热点代码缓存的范围是怎么确定的？
+
+machine_genblock() 函数根据当前的pc指针，不断地取指、译码，然后模拟执行的过程，生成本地的C代码，以字符串的方式返回。
+然后交给machine_compile()函数，把这段生成的本地C代码编译成对象文件(`.o`文件)，然后按照elf文件的封装格式解析这个jit cache对象文件，最终把这个二进制的代码才能够静态加载到内存中，变成动态的。  
+这块二进制代码的位置就在cache_t中的jitcode的某个偏移处。然后再cache_t的哈希表table中新添加一项<pc, offset in `cache_t.jitcode`>。然后下次取指执行的时候就可以在cache中检查对比pc地址在不在哈希表的缓存中了。
+```c
+// 整个哈希表
+typedef struct {
+  u8 *jitcode;    // 用来缓存jit的cache
+  u64 offset;     // 当前已经使用了的jitcode的偏移
+  cache_item_t table[CACHE_ENTRY_SIZE]; // 这是一个哈希表,记录<pc, offset in jitcode>
+  // 记录的是这个pc地址对应的jit代码在jitcode中的偏移量
+} cache_t;
+
+
+//使用哈希表额度方式存储pc地址和相应的host本地指令的对应关系
+typedef struct {
+  u64 pc;       // key
+  u64 hot;      // hot计数器，记录pc指针指向的这段代码的hot程度
+  u64 offset;   // value, indicate therr offset in jitcode cache
+} cache_item_t;
+```
+
+
+#### `machine_compile`函数
+这块的IO重定向有点绕
+
+```c
+u8 *machine_compile(machine_t *m, str_t source) {
+    // 这儿的dup和下面的dup2是一对相互的操作，因为在这中间要重定向`STDOUT_FILENO`
+    // 也就是说这个fd会被挪作他用，这相当于一个赋值恢复。
+    int saved_stdout = dup(STDOUT_FILENO);
+    int outp[2];
+
+    // 此时文件描述符只有0、1、2被使用
+    // 此时pipe创建管道，使用了3、4
+    // pipe[0]是读数据的fd
+    // pipe[1]是写数据的fd
+    if (pipe(outp) != 0) fatal("cannot make a pipe");
+    // dup2把管道的写端重定向到标准输出1
+    dup2(outp[1], STDOUT_FILENO);
+    // 然后把管道原来的写端关闭，此时outp[1]和标准输出是等价的
+    // 因为只要写不关闭、读端口会一直阻塞
+    close(outp[1]);
+
+    FILE *f;
+    // 创建一个管道，内部实现是fork一个子进程，执行shell命令 
+    // `clang -O3 -c -xc -o /dev/stdout -`
+    // 这个命令就是clang把源码编译成对象文件,写到标准输出
+    f = popen("clang -O3 -c -xc -o /dev/stdout -", "w");
+    if (f == NULL) fatal("cannot compile program");
+    // 然后把codegen生成的host的c代码写到管道
+    fwrite(source, 1, str_len(source), f);
+
+    // 以shell命令的视角看的话，上面的fwrite就是从标准输入读入数据
+    // 然后执行shell命令,再把命令执行结果输出到标准输出(`-o /dev/stdout`).
+    // 但是此时标准输出已经被重定向到outp管道的输入一侧.
+    // 接下来从管道的读端读数据就好的,也就是从outp[0]读数据
+
+    // 这个pclose, 才相当于关闭了outp管道的写端
+    pclose(f);
+    fflush(stdout);
+
+    read(outp[0], elfbuf, BINBUF_CAP);
+    // 最后把重定向的标准输出恢复了
+    dup2(saved_stdout, STDOUT_FILENO);
+
+    elf64_ehdr_t *ehdr = (elf64_ehdr_t *)elfbuf;
+
+    // 然后根据elf文件的封装格式解析这个对象文件
+    // ...
+}
+```
+
+machine_compile()接下来的部分就是按照elf文件格式解析对象文件，然后把data段写入到jitcode中，并且设置jit的哈希表`<pc, offset>`。这块内容涉及到对象文件的elf格式，还不熟悉，可以看一下作者的另一个关于rv链接器的课程。

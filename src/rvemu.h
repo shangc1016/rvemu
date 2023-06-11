@@ -26,7 +26,7 @@
            __VA_ARGS__),                                           \
    exit(1))
 #define fatal(msg) fatalf("%s", msg)
-#define unreachable() (fatal("unreachable"), __builtin_unreachable())
+#define unreachable() (fatal("unreloachable"), __builtin_unreachable())
 
 #define ROUNDDOWN(x, k) ((x) & -(k))
 #define ROUNDUP(x, k) (((x) + (k)-1) & -(k))
@@ -35,7 +35,7 @@
 
 #define GUEST_MEMORY_OFFSET 0x088800000000ULL
 
-// riscv64 program -> local host
+// riscv64 program -> local hosts
 #define TO_HOST(addr) (addr + GUEST_MEMORY_OFFSET)
 // local host -> riscv64
 #define TO_GUEST(addr) (addr - GUEST_MEMORY_OFFSET)

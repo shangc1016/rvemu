@@ -19,9 +19,11 @@ u8 *machine_compile(machine_t *m, str_t source) {
     pclose(f);
     fflush(stdout);
 
+    // 首先从管道中读出BINBUF_CAP大小的内容，一般情况不会超过这个大小
     read(outp[0], elfbuf, BINBUF_CAP);
     dup2(saved_stdout, STDOUT_FILENO);
 
+    // 首先从中解析出elf header的结构
     elf64_ehdr_t *ehdr = (elf64_ehdr_t *)elfbuf;
 
     /**
@@ -33,10 +35,11 @@ u8 *machine_compile(machine_t *m, str_t source) {
 
     i64 text_idx = 0, symtab_idx = 0, rela_idx = 0, rodata_idx = 0;
     {
+        // 首先有一个字面量的区域，里面记录的是有哪些segment，以及他们在什么位置
         u64 shstr_shoff = ehdr->e_shoff + ehdr->e_shstrndx * sizeof(elf64_shdr_t);
         elf64_shdr_t *shstr_shdr = (elf64_shdr_t *)(elfbuf + shstr_shoff);
         assert(ehdr->e_shnum != 0);
-
+        // 遍历这些segment，分辨它们属于哪些段
         for (i64 idx = 0; idx < ehdr->e_shnum; idx++) {
             u64 shoff = ehdr->e_shoff + idx * sizeof(elf64_shdr_t);
             elf64_shdr_t *shdr = (elf64_shdr_t *)(elfbuf + shoff);
@@ -60,6 +63,7 @@ u8 *machine_compile(machine_t *m, str_t source) {
 
     u64 text_addr = 0;
     {
+        // rodata段
         u64 shoff = ehdr->e_shoff + rodata_idx * sizeof(elf64_shdr_t);
         elf64_shdr_t *shdr = (elf64_shdr_t *)(elfbuf + shoff);
         cache_add(m->cache, m->state.pc, elfbuf + shdr->sh_offset,
@@ -70,6 +74,7 @@ u8 *machine_compile(machine_t *m, str_t source) {
 
     // apply relocations to .text section.
     {
+        // rela段
         u64 shoff = ehdr->e_shoff + rela_idx * sizeof(elf64_shdr_t);
         elf64_shdr_t *shdr = (elf64_shdr_t *)(elfbuf + shoff);
         i64 rels = shdr->sh_size / sizeof(elf64_rela_t);

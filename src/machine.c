@@ -11,7 +11,7 @@ enum exit_reason_t machine_step(machine_t *m){
             // 找不到的话，更新这段代码的hot计数值
             hot = cache_hot(m->cache, m->state.pc);
             if (hot) {
-                printf("pc = 0x%lx，生成jit代码缓存\n", m->state.pc);
+                printf("pc: 0x%lx, gen jit cache\n", m->state.pc);
                 // 如果这段代码是hot的，而且在jit cache中没有缓存，那现在就编译成host的代码
                 str_t source = machine_genblock(m);
                 // source就是host的代码
@@ -19,6 +19,8 @@ enum exit_reason_t machine_step(machine_t *m){
                 code = machine_compile(m, source);
             }
         }
+
+        printf("[jit]: cache hit\n");
 
         // 如果不是hot，就还是按照取指、译码、执行这样一步一步来做
         if (!hot) {
